@@ -19,8 +19,7 @@ function getAuth() {
 
 async function getSheet() {
   const auth = getAuth();
-  const authClient = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: authClient });
+  const sheets = google.sheets({ version: "v4", auth });
   const sheetId = process.env.GOOGLE_SHEET_ID;
   if (!sheetId) throw new Error("Missing GOOGLE_SHEET_ID");
   return { sheets, sheetId };
