@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 
 const SHEET_NAME = "Tickets";
+const INVENTORY_SHEET_NAME = "Sales Inventory";
 
 function getAuth() {
   const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
@@ -23,6 +24,14 @@ async function getSheet() {
   const sheetId = process.env.GOOGLE_SHEET_ID;
   if (!sheetId) throw new Error("Missing GOOGLE_SHEET_ID");
   return { sheets, sheetId };
+}
+
+async function getInventorySheet() {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  const inventoryId = process.env.INVENTORY_ID;
+  if (!inventoryId) throw new Error("Missing INVENTORY_ID");
+  return { sheets, inventoryId };
 }
 
 async function ensureHeader(sheets: any, sheetId: string) {
@@ -49,9 +58,52 @@ async function ensureHeader(sheets: any, sheetId: string) {
   }
 }
 
-// GET — fetch all tickets
-export async function GET() {
+// GET — fetch all tickets or inventory
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const resource = searchParams.get("resource");
+
+    if (resource === "inventory") {
+      console.log(
+        "[Sheets] GET /api/tickets?resource=inventory - Fetching inventory...",
+      );
+      const { sheets, inventoryId } = await getInventorySheet();
+      console.log("[Sheets] Connected to inventory sheet:", inventoryId);
+
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: inventoryId,
+        range: `${INVENTORY_SHEET_NAME}!B2:E`,
+      });
+
+      const rows = res.data.values || [];
+      console.log(`[Sheets] Retrieved ${rows.length} inventory rows`);
+
+      const inventory = rows
+        .map((row: string[], idx: number) => ({
+          rowNumber: idx + 2, // starts at sheet row 2
+          seller: row[0] ?? "",
+          item: row[1] ?? "",
+          amount: parseFloat(String(row[2])) || 0,
+          soldRaw: String(row[3] ?? "").toLowerCase(),
+        }))
+        .filter(
+          (row: any) =>
+            (row.seller || row.item || row.amount) &&
+            row.soldRaw !== "true" &&
+            row.soldRaw !== "1" &&
+            row.soldRaw !== "yes",
+        )
+        .map((row: any) => ({
+          rowNumber: row.rowNumber,
+          seller: row.seller,
+          item: row.item,
+          amount: row.amount,
+        }));
+
+      return NextResponse.json({ inventory });
+    }
+
     console.log("[Sheets] GET /api/tickets - Fetching tickets...");
     const { sheets, sheetId } = await getSheet();
     console.log("[Sheets] Connected to sheet:", sheetId);
@@ -82,11 +134,34 @@ export async function GET() {
   }
 }
 
-// POST — add, delete, or clear
+// POST — add, delete, clear, or mark inventory as sold
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     console.log("[Sheets] POST /api/tickets - Action:", body.action);
+
+    if (body.action === "markSold") {
+      const { sheets, inventoryId } = await getInventorySheet();
+      const rowNumber = Number(body.rowNumber);
+      if (!rowNumber || rowNumber < 2) {
+        return NextResponse.json(
+          { error: "Invalid inventory rowNumber" },
+          { status: 400 },
+        );
+      }
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: inventoryId,
+        range: `${INVENTORY_SHEET_NAME}!E${rowNumber}:F${rowNumber}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[true, body.parent ?? ""]] },
+      });
+
+      console.log(
+        `[Sheets] Marked inventory row ${rowNumber} as sold and wrote parent`,
+      );
+      return NextResponse.json({ status: "ok" });
+    }
 
     const { sheets, sheetId } = await getSheet();
     console.log("[Sheets] Connected to sheet:", sheetId);

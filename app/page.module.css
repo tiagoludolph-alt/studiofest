@@ -118,6 +118,60 @@
     margin-bottom: 1rem;
 }
 
+.inputGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.inputWrap {
+    position: relative;
+    width: 100%;
+}
+
+.inputIcon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.fieldInput {
+    width: 100%;
+    height: 56px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1.2;
+    letter-spacing: 0;
+    padding: 0 14px 0 38px;
+    transition: var(--transition);
+}
+
+.fieldInput::placeholder {
+    color: var(--text-muted);
+    font-size: 18px;
+    letter-spacing: 0;
+}
+
+.fieldInput:hover {
+    border-color: var(--border-light);
+    background: var(--surface-alt);
+}
+
+.fieldInput:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(107, 92, 231, 0.1);
+    background: var(--surface);
+}
+
 .formFooter {
     display: flex;
     justify-content: space-between;
@@ -474,6 +528,16 @@
         gap: 12px;
     }
 
+    .fieldInput {
+        height: 52px;
+        font-size: 17px;
+        padding-left: 36px;
+    }
+
+    .fieldInput::placeholder {
+        font-size: 17px;
+    }
+
     .stats {
         grid-template-columns: 1fr;
         gap: 12px;
@@ -522,12 +586,23 @@
 }
 
 @media (max-width: 480px) {
-    body {
-        padding: 1rem 0.75rem;
-    }
-
     .headerTitle {
         font-size: 20px;
+    }
+
+    .fieldInput {
+        height: 48px;
+        font-size: 16px;
+        padding-left: 34px;
+    }
+
+    .fieldInput::placeholder {
+        font-size: 16px;
+    }
+
+    .inputIcon {
+        left: 10px;
+        font-size: 12px;
     }
 
     .card {

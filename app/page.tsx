@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, InputHTMLAttributes } from "react";
 import styles from "./page.module.css";
 
 interface Ticket {
@@ -12,7 +12,32 @@ interface Ticket {
   time: string;
 }
 
+interface InventoryItem {
+  rowNumber: number;
+  item: string;
+  seller: string;
+  amount: number;
+}
+
 type SyncState = "idle" | "syncing" | "synced" | "error";
+
+function FormInput({
+  icon,
+  className,
+  ...props
+}: { icon: string } & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className={styles.inputWrap}>
+      <span className={styles.inputIcon} aria-hidden="true">
+        {icon}
+      </span>
+      <input
+        className={`${styles.fieldInput} ${className ?? ""}`.trim()}
+        {...props}
+      />
+    </div>
+  );
+}
 
 export default function Home() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -26,6 +51,11 @@ export default function Home() {
   const [seller, setSeller] = useState("");
   const [amount, setAmount] = useState("");
   const [item, setItem] = useState("");
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventoryQuery, setInventoryQuery] = useState("");
+  const [selectedInventoryRowNumber, setSelectedInventoryRowNumber] = useState<
+    number | null
+  >(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTitle, setConfirmTitle] = useState("");
@@ -54,14 +84,45 @@ export default function Home() {
     }
   }, []);
 
+  const fetchInventory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tickets?resource=inventory");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setInventory(data.inventory || []);
+    } catch {
+      setValidationError("✓ Could not load inventory");
+      setInventory([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTickets();
-  }, [fetchTickets]);
+    fetchInventory();
+  }, [fetchTickets, fetchInventory]);
+
+  function selectInventoryItem(selected: InventoryItem | null) {
+    if (!selected) {
+      setItem("");
+      setSeller("");
+      setAmount("");
+      setSelectedInventoryRowNumber(null);
+      return;
+    }
+    setItem(selected.item ?? "");
+    setSeller(selected.seller ?? "");
+    setAmount(String(selected.amount ?? ""));
+    setSelectedInventoryRowNumber(selected.rowNumber ?? null);
+  }
 
   async function addTicket() {
     setValidationError("");
     if (!parent || !seller || !amount || !item) {
       setValidationError("✓ Please fill in all fields");
+      return;
+    }
+    if (!selectedInventoryRowNumber) {
+      setValidationError("✓ Please select an inventory item");
       return;
     }
     const amt = parseFloat(amount);
@@ -83,6 +144,7 @@ export default function Home() {
     setSeller("");
     setAmount("");
     setItem("");
+    setInventoryQuery("");
     setValidationError("");
     setAdding(true);
     setSyncState("syncing");
@@ -93,6 +155,20 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "add", ...ticket }),
       });
+
+      await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "markSold",
+          rowNumber: selectedInventoryRowNumber,
+          parent,
+        }),
+      });
+
+      await fetchInventory();
+      setSelectedInventoryRowNumber(null);
+
       setSyncState("synced");
       setSyncMsg("Synced with Google Sheets");
     } catch {
@@ -212,10 +288,87 @@ export default function Home() {
 
       <div className={styles.card}>
         <div className={styles.cardTitle}>Log a new purchase</div>
+        <div className={styles.formFull}>
+          <label>Inventory item</label>
+          <div className={styles.inputWrap}>
+            <span className={styles.inputIcon} aria-hidden="true">
+              🔎
+            </span>
+            <input
+              className={styles.fieldInput}
+              value={inventoryQuery}
+              onChange={(e) => setInventoryQuery(e.target.value)}
+              placeholder="Search item or learner..."
+            />
+          </div>
+          <div className={styles.tableWrap} style={{ marginTop: "10px" }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Seller</th>
+                  <th>Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inventory
+                  .filter((inv) => {
+                    const q = inventoryQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      inv.item.toLowerCase().includes(q) ||
+                      inv.seller.toLowerCase().includes(q) ||
+                      String(inv.amount).includes(q)
+                    );
+                  })
+                  .slice(0, 30)
+                  .map((inv) => {
+                    const isSelected =
+                      selectedInventoryRowNumber === inv.rowNumber;
+                    return (
+                      <tr
+                        key={`${inv.rowNumber}-${inv.item}-${inv.seller}`}
+                        onClick={() => selectInventoryItem(inv)}
+                        style={{
+                          cursor: "pointer",
+                          background: isSelected
+                            ? "var(--accent-light)"
+                            : undefined,
+                        }}
+                      >
+                        <td className={styles.bold}>{inv.item}</td>
+                        <td>{inv.seller}</td>
+                        <td className={styles.amount}>
+                          €{Number(inv.amount).toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                {inventory.filter((inv) => {
+                  const q = inventoryQuery.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    inv.item.toLowerCase().includes(q) ||
+                    inv.seller.toLowerCase().includes(q) ||
+                    String(inv.amount).includes(q)
+                  );
+                }).length === 0 && (
+                  <tr>
+                    <td colSpan={3} className={styles.muted}>
+                      No inventory items match your search.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div className={styles.formGrid}>
           <div>
             <label>Parent name</label>
-            <input
+            <FormInput
+              icon="👤"
               value={parent}
               onChange={(e) => setParent(e.target.value)}
               placeholder="e.g. Mrs. Johnson"
@@ -224,33 +377,36 @@ export default function Home() {
           </div>
           <div>
             <label>Seller (student)</label>
-            <input
+            <FormInput
+              icon="🎓"
               value={seller}
               onChange={(e) => setSeller(e.target.value)}
-              placeholder="e.g. Alex"
-              onKeyDown={(e) => e.key === "Enter" && addTicket()}
+              placeholder="Auto-filled from inventory"
+              readOnly
             />
           </div>
           <div>
             <label>Amount (€)</label>
-            <input
+            <FormInput
+              icon="€"
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
               min="0"
               step="0.25"
-              onKeyDown={(e) => e.key === "Enter" && addTicket()}
+              readOnly
             />
           </div>
         </div>
         <div className={styles.formFull}>
           <label>Item / product</label>
-          <input
+          <FormInput
+            icon="🛍️"
             value={item}
             onChange={(e) => setItem(e.target.value)}
-            placeholder="e.g. Painted mug"
-            onKeyDown={(e) => e.key === "Enter" && addTicket()}
+            placeholder="Auto-filled from inventory"
+            readOnly
           />
         </div>
         <div className={styles.formFooter}>
