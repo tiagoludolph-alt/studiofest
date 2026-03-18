@@ -17,6 +17,7 @@ interface InventoryItem {
   item: string;
   seller: string;
   amount: number;
+  quantity: number;
 }
 
 type SyncState = "idle" | "syncing" | "synced" | "error";
@@ -308,6 +309,7 @@ export default function Home() {
                   <th>Item</th>
                   <th>Seller</th>
                   <th>Price</th>
+                  <th>Qty</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,7 +323,7 @@ export default function Home() {
                       String(inv.amount).includes(q)
                     );
                   })
-                  .slice(0, 30)
+
                   .map((inv) => {
                     const isSelected =
                       selectedInventoryRowNumber === inv.rowNumber;
@@ -341,6 +343,7 @@ export default function Home() {
                         <td className={styles.amount}>
                           €{Number(inv.amount).toFixed(2)}
                         </td>
+                        <td className={styles.bold}>{inv.quantity}</td>
                       </tr>
                     );
                   })}
@@ -354,7 +357,7 @@ export default function Home() {
                   );
                 }).length === 0 && (
                   <tr>
-                    <td colSpan={3} className={styles.muted}>
+                    <td colSpan={4} className={styles.muted}>
                       No inventory items match your search.
                     </td>
                   </tr>

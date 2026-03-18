@@ -73,23 +73,33 @@ export async function GET(req: NextRequest) {
 
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId: inventoryId,
-        range: `${INVENTORY_SHEET_NAME}!B2:E`,
+        range: `${INVENTORY_SHEET_NAME}!B2:G`,
       });
 
       const rows = res.data.values || [];
       console.log(`[Sheets] Retrieved ${rows.length} inventory rows`);
 
       const inventory = rows
-        .map((row: string[], idx: number) => ({
-          rowNumber: idx + 2, // starts at sheet row 2
-          seller: row[0] ?? "",
-          item: row[1] ?? "",
-          amount: parseFloat(String(row[2])) || 0,
-          soldRaw: String(row[3] ?? "").toLowerCase(),
-        }))
+        .map((row: string[], idx: number) => {
+          const soldRaw = String(row[3] ?? "").toLowerCase();
+          const qtyRaw = String(row[5] ?? "").trim();
+          const parsedQty = parseInt(qtyRaw, 10);
+          const quantity =
+            Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+
+          return {
+            rowNumber: idx + 2, // starts at sheet row 2
+            seller: row[0] ?? "",
+            item: row[1] ?? "",
+            amount: parseFloat(String(row[2])) || 0,
+            soldRaw,
+            quantity,
+          };
+        })
         .filter(
           (row: any) =>
             (row.seller || row.item || row.amount) &&
+            row.quantity > 0 &&
             row.soldRaw !== "true" &&
             row.soldRaw !== "1" &&
             row.soldRaw !== "yes",
@@ -99,6 +109,7 @@ export async function GET(req: NextRequest) {
           seller: row.seller,
           item: row.item,
           amount: row.amount,
+          quantity: row.quantity,
         }));
 
       return NextResponse.json({ inventory });
@@ -150,17 +161,53 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const rowRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: inventoryId,
+        range: `${INVENTORY_SHEET_NAME}!E${rowNumber}:G${rowNumber}`,
+      });
+
+      const row = rowRes.data.values?.[0] || [];
+      const soldRaw = String(row[0] ?? "").toLowerCase();
+      const saleToRaw = String(row[1] ?? "").trim();
+      const qtyRaw = String(row[2] ?? "").trim();
+      const parsedQty = parseInt(qtyRaw, 10);
+      const currentQty =
+        Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+
+      if (soldRaw === "true" || soldRaw === "1" || soldRaw === "yes") {
+        return NextResponse.json(
+          { error: "Item is already marked as sold" },
+          { status: 400 },
+        );
+      }
+
+      const nextQty = Math.max(0, currentQty - 1);
+      const markAsSold = nextQty === 0;
+
+      const parentName = String(body.parent ?? "").trim();
+      const updatedSaleTo = parentName
+        ? saleToRaw
+          ? `${saleToRaw}, ${parentName}`
+          : parentName
+        : saleToRaw;
+
       await sheets.spreadsheets.values.update({
         spreadsheetId: inventoryId,
-        range: `${INVENTORY_SHEET_NAME}!E${rowNumber}:F${rowNumber}`,
+        range: `${INVENTORY_SHEET_NAME}!E${rowNumber}:G${rowNumber}`,
         valueInputOption: "RAW",
-        requestBody: { values: [[true, body.parent ?? ""]] },
+        requestBody: {
+          values: [[markAsSold, updatedSaleTo, nextQty]],
+        },
       });
 
       console.log(
-        `[Sheets] Marked inventory row ${rowNumber} as sold and wrote parent`,
+        `[Sheets] Updated inventory row ${rowNumber}: sold=${markAsSold}, quantity=${nextQty}`,
       );
-      return NextResponse.json({ status: "ok" });
+      return NextResponse.json({
+        status: "ok",
+        sold: markAsSold,
+        quantity: nextQty,
+      });
     }
 
     const { sheets, sheetId } = await getSheet();
